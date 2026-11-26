@@ -1332,10 +1332,11 @@ export class PlaywrightSurface {
     }
     if (element === undefined) return { box: undefined, hidden };
     try {
-      const border = await element.boundingBox();
-      return { box: border === null ? null : contentBox(border, await element.evaluate(frameContentInset)), hidden };
+      const border = await readFrame(element, (frame, options) => frame.boundingBox(options));
+      if (border === null) return { box: null, hidden };
+      return { box: contentBox(border, await readFrame(element, (frame, options) => frame.evaluate(frameContentInset, undefined, options))), hidden };
     } catch (cause) {
-      throw translatePwError(cause, 'frame resolution');
+      throw staleOr(cause, 'frame resolution');
     }
   }
 
@@ -1551,6 +1552,27 @@ function watchDocuments(page: Page): {
       page.off('framedetached', mark);
     },
   };
+}
+
+/** How long one read of a frame element waits before the frame is counted again. */
+const FRAME_READ_TIMEOUT_MS = 100;
+
+/**
+ * Reads a frame element that was just counted. Playwright's own read waits for
+ * an element that left to come back, so each try is short: a frame gone by
+ * then is `FRAME_NOT_FOUND`, and one still there gets a try twice as long.
+ */
+async function readFrame<T>(frame: Locator, read: (frame: Locator, options: { timeout: number }) => Promise<T>): Promise<T> {
+  for (let timeout = FRAME_READ_TIMEOUT_MS; ; timeout *= 2) {
+    try {
+      return await read(frame, { timeout });
+    } catch (cause) {
+      if (!isPwTimeout(cause)) throw cause;
+      if ((await frame.count()) === 0) {
+        throw new EngineError('FRAME_NOT_FOUND', 'the frame left while it was read', { retryable: true, cause });
+      }
+    }
+  }
 }
 
 /** The frame a request belongs to; undefined for a popup's first navigation, which Playwright issues before the popup's frame exists. */
