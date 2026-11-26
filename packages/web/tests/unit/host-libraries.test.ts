@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -95,13 +96,12 @@ describe('missingHostLibraries', () => {
       const loader = path.join(bin, 'loader.pid');
       // As the real ldd does, the script waits on a child of its own.
       const env = withLdd(`printf "\\tlibnss3.so => not found\\n"\n/bin/sleep 30 &\necho $! > ${loader}\nwait`);
+      // The killed loader is an orphan, a zombie until init reaps it, and signal 0 still reaches a zombie.
       const alive = (): boolean => {
-        try {
-          process.kill(Number(readFileSync(loader, 'utf8')), 0);
-          return true;
-        } catch {
-          return false;
-        }
+        if (!existsSync(loader)) return false;
+        const { status, stdout, error } = spawnSync('ps', ['-o', 'stat=', '-p', readFileSync(loader, 'utf8').trim()], { encoding: 'utf8' });
+        if (error !== undefined) throw error;
+        return status === 0 && !stdout.trim().startsWith('Z');
       };
       const stopped = async (probe: { timeoutMs?: number; signal?: AbortSignal }): Promise<void> => {
         rmSync(loader, { force: true });
