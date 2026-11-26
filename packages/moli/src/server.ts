@@ -20,7 +20,7 @@ export interface MoliServer {
   readonly cdpEndpoint: string;
   /** Moli-Version from /json/version, or unknown when the build omits it. */
   readonly version: string;
-  /** Resolves after SIGTERM, or SIGKILL when the grace period expires. */
+  /** Sends the process group SIGTERM, then SIGKILL when the grace period expires. Resolves once the group has ended, or a second after SIGKILL. */
   stop(graceMs: number): Promise<void>;
 }
 
@@ -28,6 +28,8 @@ const HOST = '127.0.0.1';
 const POLL_MS = 50;
 const PROBE_TIMEOUT_MS = 500;
 const STDERR_CAP = 64 * 1024;
+/** Bounds the wait after SIGKILL: a dead orphan that init has not reaped still counts as a group member. */
+const KILL_WAIT_MS = 1_000;
 
 /** Starts a loopback CDP server, ending the process on a failed or cancelled startup. */
 export async function serveMoli(options: MoliServeOptions): Promise<MoliServer> {
@@ -118,16 +120,22 @@ async function stopMoliProcess(child: ChildProcess, graceMs: number): Promise<vo
     ? Promise.resolve()
     : new Promise<void>((resolve) => child.once('exit', () => resolve()));
   signalMoliProcess(child, 'SIGTERM');
-  const deadline = Date.now() + graceMs;
-  while (moliProcessGroupRunning(child)) {
-    const remaining = deadline - Date.now();
-    if (remaining <= 0) {
-      signalMoliProcess(child, 'SIGKILL');
-      break;
-    }
-    await sleep(Math.min(POLL_MS, remaining));
+  if (!(await moliProcessGroupEnded(child, graceMs))) {
+    signalMoliProcess(child, 'SIGKILL');
+    await moliProcessGroupEnded(child, KILL_WAIT_MS);
   }
   await exited;
+}
+
+/** Waits up to `timeoutMs` for the process group to end, and tells whether it did. */
+async function moliProcessGroupEnded(child: ChildProcess, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (moliProcessGroupRunning(child)) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) return false;
+    await sleep(Math.min(POLL_MS, remaining));
+  }
+  return true;
 }
 
 /** A POSIX group can outlive its leader; Windows tracks only the child. */

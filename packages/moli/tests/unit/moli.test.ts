@@ -84,6 +84,16 @@ async function discovery(lease: BrowserLease): Promise<{ args: string[]; marker?
   }
 }
 
+/** Whether `pid` still runs. On Linux an orphan stays a zombie until init reaps it, which signal 0 still reaches. */
+function running(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return process.platform !== 'linux' || !readFileSync(`/proc/${pid}/stat`, 'utf8').includes(') Z ');
+  } catch {
+    return false;
+  }
+}
+
 /** Counts only this test file's uniquely named fake process. */
 function runningServers(pattern = script): number {
   try {
@@ -195,9 +205,11 @@ describe.skipIf(process.platform === 'win32')('moli()', () => {
     const wrapper = path.join(directory, `wrapper-${when.replaceAll(' ', '-')}.cjs`);
     const wrapperBinary = `${wrapper}.sh`;
     const pidFile = `${wrapper}.pid`;
+    const descendantPidFile = `${wrapper}.descendant.pid`;
     writeFileSync(wrapper, `
 require('node:fs').writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));
-require('node:child_process').spawn(process.execPath, [${JSON.stringify(script)}, ...process.argv.slice(2), '--ignore-term'], { stdio: 'ignore' });
+const descendant = require('node:child_process').spawn(process.execPath, [${JSON.stringify(script)}, ...process.argv.slice(2), '--ignore-term'], { stdio: 'ignore' });
+require('node:fs').writeFileSync(${JSON.stringify(descendantPidFile)}, String(descendant.pid));
 process.on('SIGTERM', () => process.exit(0));
 setInterval(() => {}, 1000);
 `);
@@ -218,9 +230,13 @@ setInterval(() => {}, 1000);
       await expect.poll(() => runningServers(wrapper)).toBe(0);
     }
     expect(await discovery(lease)).toBeDefined();
+    const descendant = Number(readFileSync(descendantPidFile, 'utf8'));
+    expect(running(descendant)).toBe(true);
     await provider.release(lease, releaseContext);
-    await expect.poll(() => discovery(lease)).toBeUndefined();
+    // Read first: the checks below take longer than a killed process takes to end.
+    expect(running(descendant)).toBe(false);
     expect(runningServers()).toBe(0);
+    expect(await discovery(lease)).toBeUndefined();
   });
 
   it('kills a server that ignores SIGTERM', async () => {
