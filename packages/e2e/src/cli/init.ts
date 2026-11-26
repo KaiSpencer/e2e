@@ -418,7 +418,9 @@ export async function init(root: string, options: InitOptions = {}): Promise<Ini
   }
 
   // A new config's web target starts an app init recognizes, such as Next.js, with the project's own scripts.
-  const framework = existingConfig === undefined && engines.includes('web') ? detectFramework(pkg.manifest) : undefined;
+  const framework = existingConfig === undefined && engines.includes('web')
+    ? detectFramework({ manifest: pkg.manifest, readFile: (name) => readProjectFile(cwd, name) })
+    : undefined;
   const app = framework?.kind === 'app' ? framework : undefined;
   if (framework?.kind === 'app') {
     clack.log.info(describeApp(framework, manager));
@@ -831,6 +833,12 @@ function describeApp(app: FrameworkApp, manager: PackageManager): string {
 function servedBuild(manifest: FrameworkManifest, config: string): string | undefined {
   const scripts = productionScripts(manifest);
   return scripts !== undefined && configRunsScript(config, scripts.start) ? scripts.build : undefined;
+}
+
+/** A file at the project root as text, or undefined when there is none. */
+function readProjectFile(cwd: string, name: string): string | undefined {
+  const file = path.join(cwd, name);
+  return existsSync(file) && statSync(file).isFile() ? readFileSync(file, 'utf8') : undefined;
 }
 
 /** Whether `manager` runs in the workspace root, which exists before init writes and where a Corepack shim picks the workspace's version. */

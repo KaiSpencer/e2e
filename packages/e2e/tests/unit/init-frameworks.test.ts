@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { detectFramework, productionScripts } from '../../src/cli/init/frameworks.ts';
+import { detectFramework as detect, productionScripts, type FrameworkManifest } from '../../src/cli/init/frameworks.ts';
+
+/** Detects the framework of a project with this package.json and, by default, no other files. */
+function detectFramework(manifest: FrameworkManifest, readFile: (name: string) => string | undefined = () => undefined) {
+  return detect({ manifest, readFile });
+}
 
 /** The scripts `create-next-app` writes. */
 const NEXT_SCRIPTS = { dev: 'next dev', build: 'next build', start: 'next start' };
