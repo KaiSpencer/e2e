@@ -223,42 +223,19 @@ Without a `dev` script, or with a port that isn't a fixed number (such as
 ##### Vite apps
 
 `init` finds a Vite app when `package.json` has `vite` in `dependencies` or
-`devDependencies`. A project with `next` is a Next.js app, even with `vite`
-beside it. When the `dev` script starts the Vite dev server (`vite`,
-`vite dev`, or `vite serve`), the web target runs that script with the
-project's package manager:
+`devDependencies` (a project with `next` is a Next.js app). When the `dev`
+script starts the Vite dev server, the web target runs that script with the
+project's package manager, locally and in CI, at `http://localhost:<port>`:
+the `--port` of the `vite` command, else 5173. Vite reads no `PORT`
+variable. A local run reuses a dev server already on the port.
 
-- `app.url` is `http://localhost:<port>`, with the port from the `--port`
-  flag of the `vite` command, else 5173. Vite reads no `PORT` variable.
-- `app.command` runs the `dev` script with `reuseExisting: true`, so a
-  local run reuses a dev server already on the port. CI ignores
-  `reuseExisting` and starts the script. `vite preview` serves the
-  production build on another port, so CI tests the dev server too.
+Otherwise the target reads `APP_URL` as in any other project, and `init`
+prints what to set. The common cases:
 
-Without `--port`, Vite uses the config's `server.port` over 5173, so
-`init` reads the `vite.config.*` file at the project root. When any `port`
-key in it, `preview` and `hmr` ones included, isn't 5173, `init` keeps the
-placeholder, as listed below.
-
-The target reads `APP_URL` as in any other project, and `init` says what to
-set, when:
-
-- There is no `dev` script, or it starts no Vite dev server
-  (`vite build --watch`, or another tool's command such as
-  `react-router dev`).
-- The port isn't a fixed number.
-- The `vite` command names its own config (`--config`), or serves another
-  directory (`vite web`, `cd web && vite`), whose config `init` doesn't
-  read.
-- The `vite` command has no `--port`, and the root `vite.config.*` sets
-  another `port`.
-- The dev server serves HTTPS: `@vitejs/plugin-basic-ssl` or
-  `vite-plugin-mkcert` is a dependency, or the root `vite.config.*` has an
-  `https` key.
-- The project has a backend that Vite only serves assets for:
-  `laravel-vite-plugin`, `vite-plugin-symfony`, `vite-plugin-ruby`, or
-  `vite-plugin-rails` as a dependency, or `artisan` or `manage.py` at the
-  root. Point `app.url` at the backend's server.
+- The root `vite.config.*` sets another port.
+- A backend serves the app and Vite only serves its assets (Laravel,
+  Symfony, Rails, Django). Point `app.url` at the backend's server.
+- The dev server uses HTTPS.
 
 <a id="ci-pipeline" />
 ##### CI pipeline

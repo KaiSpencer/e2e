@@ -1,11 +1,12 @@
 /**
  * Vite: the dev server, locally and in CI, on the `--port` of the `vite`
- * command, else the config's `server.port`, else 5173. Vite reads no `PORT`
- * variable, and `vite preview` serves the build on 4173, so CI runs `dev` too.
+ * command, else 5173. A root `vite.config.*` that sets another port keeps the
+ * placeholder. Vite reads no `PORT` variable, and `vite preview` serves the
+ * build on 4173, so CI runs `dev` too.
  */
 
 import type { Detection, Framework } from '../frameworks.ts';
-import { declares, DEV_SCRIPT, fixedPort } from './scripts.ts';
+import { declares, DEV_SCRIPT, fixedPort, launchedCommands } from './scripts.ts';
 
 const NAME = 'Vite';
 const DOCS = '/reference/cli#vite-apps';
@@ -13,7 +14,9 @@ const DEFAULT_PORT = 5173;
 /** `vite` subcommands that start no dev server. */
 const OTHER_COMMANDS = new Set(['build', 'preview', 'optimize']);
 /** The dev server's options that take a value, so the word after one is not the root it serves. */
-const VALUE_OPTIONS = new Set(['--host', '--port', '--open', '--base', '-l', '--logLevel', '-m', '--mode', '-d', '--debug', '-f', '--filter', '--configLoader']);
+const VALUE_OPTIONS = new Set(['--host', '--port', '--open', '--base', '-l', '--logLevel', '-m', '--mode', '-d', '--debug', '-f', '--filter', '--configLoader', '--profile']);
+/** The dev server's boolean options, which take `true` or `false` as a value (`--clearScreen false`) and any other word as the root. */
+const BOOLEAN_OPTIONS = new Set(['--clearScreen', '--cors', '--strictPort', '--force', '--experimentalBundle']);
 /** Vite plugins of a backend that serves the app, while Vite serves only its assets. */
 const BACKEND_PLUGINS = ['laravel-vite-plugin', 'vite-plugin-symfony', 'vite-plugin-ruby', 'vite-plugin-rails'];
 /** Root files of Laravel and Django, whose Vite integrations list no plugin in package.json. */
@@ -25,8 +28,6 @@ const CONFIGS = ['vite.config.ts', 'vite.config.mts', 'vite.config.cts', 'vite.c
 const CONFIG_PORT = /\bport\b(?:\s*:\s*([^,}\n]*))?/gu;
 /** An `https` key in a config, as `https: { ... }` or the shorthand `{ https }`, and not `https: false` or an `https://` URL. */
 const CONFIG_HTTPS = /\bhttps\s*(?::(?!\/\/|\s*false\b)|[,}])/u;
-/** Launchers whose quoted arguments are commands: `concurrently "vite" "tsc -w"`, `sh -c "vite"`. */
-const RUNNERS = new Set(['concurrently', 'sh', 'bash']);
 
 export const vite: Framework = {
   /** A project with `vite` in `dependencies` or `devDependencies`. */
@@ -50,7 +51,7 @@ export const vite: Framework = {
     if (https !== undefined) return unsupported(`${https} serves the Vite dev server over HTTPS`);
     const dev = manifest.scripts?.[DEV_SCRIPT];
     if (dev === undefined) return unsupported(`package.json has no ${DEV_SCRIPT} script`);
-    const commands = viteCommands(dev);
+    const commands = launchedCommands(dev);
     const server = commands.findIndex((command) => command[0] === 'vite' && !OTHER_COMMANDS.has(command[1] ?? ''));
     const command = commands[server];
     if (command === undefined) return unsupported(`the ${DEV_SCRIPT} script does not start the Vite dev server`);
@@ -62,7 +63,7 @@ export const vite: Framework = {
       return unsupported(`the ${DEV_SCRIPT} script names its own Vite config`);
     }
     // Vite reads the config of the directory it serves, which init does not.
-    const root = args.some((word, index) => !word.startsWith('-') && !VALUE_OPTIONS.has(args[index - 1] ?? ''));
+    const root = args.some((word, index) => !word.startsWith('-') && !isOptionValue(args[index - 1] ?? '', word));
     if (root || commands.slice(0, server).some((earlier) => earlier[0] === 'cd')) {
       return unsupported(`the ${DEV_SCRIPT} script serves another directory`);
     }
@@ -76,37 +77,9 @@ export const vite: Framework = {
   },
 };
 
-/**
- * A script's commands, each as its words from the binary on (see
- * `launched`). A script splits at `&&`, `||`, `;`, `&`, and `|`. Under one
- * of `RUNNERS`, a quoted argument is a command of its own
- * (`concurrently -k "vite" "json-server --port 3001"`); under any other
- * command it is one word, as in `vite "web"` or `echo "vite"`.
- */
-function viteCommands(script: string): string[][] {
-  const commands: string[][] = [];
-  for (const part of script.split(/&&|\|\||[;&|]/u)) {
-    const outer: string[] = [];
-    for (const match of part.matchAll(/"([^"]*)"|'([^']*)'|(\S+)/gu)) {
-      const quoted = match[1] ?? match[2];
-      if (quoted === undefined) outer.push(match[3] ?? '');
-      else if (RUNNERS.has(launched(outer)[0] ?? '')) commands.push(launched(quoted.split(/\s+/u).filter((word) => word !== '')));
-      else outer.push(quoted);
-    }
-    commands.push(launched(outer));
-  }
-  return commands.filter((command) => command.length > 0);
-}
-
-/** A command from its binary on: `npx vite`, `cross-env NODE_ENV=dev vite`, and `PORT=1 vite` are `vite`. */
-function launched(words: string[]): string[] {
-  let start = 0;
-  for (;;) {
-    const word = words[start];
-    if (word === 'npx' || word === 'bunx' || word === 'yarn' || word === 'cross-env' || /^[A-Za-z_][A-Za-z0-9_]*=/u.test(word ?? '')) start += 1;
-    else if ((word === 'pnpm' || word === 'npm') && words[start + 1] === 'exec') start += 2;
-    else return words.slice(start);
-  }
+/** Whether `word` is the value of `option`, the word before it, rather than the root the dev server serves. */
+function isOptionValue(option: string, word: string): boolean {
+  return VALUE_OPTIONS.has(option) || (BOOLEAN_OPTIONS.has(option) && (word === 'true' || word === 'false'));
 }
 
 /** The value of a `--port` option (`--port 4100`, `--port=4100`), the only form Vite's CLI takes, raw. */

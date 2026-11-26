@@ -129,6 +129,10 @@ describe('detectFramework on a Vite app', () => {
     ['vite --mode "development" --port 4200', 4200],
     // Vite's CLI ignores what follows `--`.
     ['vite -- --port 4100', 5173],
+    // A boolean option takes `true` or `false` as its value, which is not a root.
+    ['vite --clearScreen false', 5173],
+    ['vite --strictPort true --port 4100', 4100],
+    ['vite dev --force false --cors true', 5173],
   ])('reads the port of %j as %d', (dev, port) => {
     expect(vite({ dev })).toMatchObject({ kind: 'app', url: `http://localhost:${port}` });
   });
@@ -178,6 +182,8 @@ describe('detectFramework on a Vite app', () => {
     ['vite serve web --port 4100', 'the dev script serves another directory'],
     ['cd web && vite', 'the dev script serves another directory'],
     ['vite "web"', 'the dev script serves another directory'],
+    ['vite false', 'the dev script serves another directory'],
+    ['vite --force web', 'the dev script serves another directory'],
     ['vite -c vite.dev.ts', 'the dev script names its own Vite config'],
     ['vite dev --config=vite.dev.ts', 'the dev script names its own Vite config'],
   ])('cannot read the config of %j', (dev, reason) => {
