@@ -1099,6 +1099,94 @@ describe('e2e init', () => {
     expect(read('AGENTS.md')).toContain('.agents/skills/e2e/SKILL.md');
   });
 
+  describe.skipIf(!symlinks)('with pnpm linking the skill', () => {
+    /** The installed e2e's skill, and pnpm's link to it in `location` as pnpm 12 writes it. */
+    function pnpmLink(location: string, name = 'e2e'): void {
+      const target = path.join(dir, 'node_modules', 'e2e', 'skills', 'e2e');
+      mkdirSync(target, { recursive: true });
+      writeFileSync(path.join(target, 'SKILL.md'), 'installed');
+      mkdirSync(path.join(dir, location), { recursive: true });
+      symlinkSync(path.relative(path.join(dir, location), target), path.join(dir, location, name), process.platform === 'win32' ? 'junction' : 'dir');
+    }
+
+    it('leaves the links alone and asks nothing about them', async () => {
+      pnpmLink('.agents/skills');
+      pnpmLink('.claude/skills');
+      vi.mocked(clack.confirm).mockResolvedValue(true);
+      expect((await init(dir, { install: false })).exitCode).toBe(0);
+      expect(clack.multiselect).not.toHaveBeenCalledWith(expect.objectContaining({ message: 'Install the e2e skill for coding agents?' }));
+      expect(clack.confirm).not.toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('Replace the symlink') }));
+      expect(lstatSync(path.join(dir, '.agents/skills/e2e')).isSymbolicLink()).toBe(true);
+      expect(read('.agents/skills/e2e/SKILL.md')).toBe('installed');
+      expect(output()).toContain('Linked to the installed e2e, not touching: .agents/skills/e2e');
+      expect(output()).toContain('Linked to the installed e2e, not touching: .claude/skills/e2e');
+      expect(output()).not.toContain('Symlink, not touching');
+      expect(output()).not.toContain('Create .agents/skills/e2e/');
+    });
+
+    it('writes no copy beside a link pnpm named after the package, which a copy would turn into a second skill', async () => {
+      pnpmLink('.agents/skills', 'pnpm-e2e-e2e');
+      expect((await init(dir, { yes: true, skills: ['.agents/skills', '.claude/skills'], mcp: [] })).exitCode).toBe(0);
+      expect(existsSync(path.join(dir, '.agents/skills/e2e'))).toBe(false);
+      expect(existsSync(path.join(dir, '.claude/skills/e2e'))).toBe(false);
+      expect(output()).toContain('Not copying the skill into .claude/skills: the package manager links it from the installed e2e in this project; create the folder and install again to link it there');
+      expect(output()).not.toContain('Not copying the skill into .agents/skills');
+      expect(output()).toContain('Linked to the installed e2e, not touching: .agents/skills/pnpm-e2e-e2e');
+    });
+
+    it('warns about a copy beside a link and still refreshes the copy', async () => {
+      writeCopy('.agents/skills', 'stale');
+      pnpmLink('.agents/skills', 'pnpm-e2e-e2e');
+      expect((await init(dir, { yes: true, mcp: [] })).exitCode).toBe(0);
+      expect(read('.agents/skills/e2e/SKILL.md')).toMatch(/^---\nname: e2e\n/);
+      expect(output()).toContain(
+        'Two e2e skills in .agents/skills: e2e and pnpm-e2e-e2e, the link to the installed e2e; delete .agents/skills/e2e and run pnpm install --force',
+      );
+    });
+
+    it('names only the deletion for a link another tool made', async () => {
+      writeCopy('.agents/skills');
+      pnpmLink('.agents/skills', 'npm-e2e-e2e');
+      expect((await init(dir, { yes: true, mcp: [] })).exitCode).toBe(0);
+      expect(output()).toContain('Two e2e skills in .agents/skills: e2e and npm-e2e-e2e, the link to the installed e2e; delete .agents/skills/e2e\n');
+    });
+
+    it('leaves a dangling skill link beside pnpm\'s link alone, without calling it a copy or offering to replace it', async () => {
+      pnpmLink('.claude/skills', 'pnpm-e2e-e2e');
+      symlinkSync('../../.agents/skills/e2e', path.join(dir, '.claude/skills/e2e'), process.platform === 'win32' ? 'junction' : 'dir');
+      vi.mocked(clack.confirm).mockResolvedValue(true);
+      expect((await init(dir, { install: false })).exitCode).toBe(0);
+      expect(output()).not.toContain('Two e2e skills');
+      expect(clack.confirm).not.toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('Replace the symlink') }));
+      expect(existsSync(path.join(dir, '.agents/skills/e2e'))).toBe(false);
+      expect(lstatSync(path.join(dir, '.claude/skills/e2e')).isSymbolicLink()).toBe(true);
+    });
+
+    it('writes no copy in a workspace member when pnpm links the skill at the workspace root', async () => {
+      pnpmLink('.agents/skills');
+      writeFileSync(path.join(dir, 'pnpm-workspace.yaml'), 'packages:\n  - app\n');
+      writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'root', private: true }));
+      const member = path.join(dir, 'app');
+      mkdirSync(path.join(member, '.agents/skills'), { recursive: true });
+      writeFileSync(path.join(member, 'package.json'), JSON.stringify({ name: 'app', private: true }));
+      expect((await init(member, { yes: true, skills: ['.agents/skills'], mcp: [] })).exitCode).toBe(0);
+      expect(existsSync(path.join(member, '.agents/skills/e2e'))).toBe(false);
+      expect(output()).toContain('Not copying the skill into .agents/skills: the package manager links it from the installed e2e at the workspace root, in ../.agents/skills/e2e');
+    });
+  });
+
+  it('removes a file an earlier e2e shipped and this one does not, and keeps the user\'s own', async () => {
+    writeCopy('.agents/skills');
+    writeFileSync(path.join(dir, '.agents/skills/e2e/references/notes.md'), 'mine\n');
+    const bundle = readSkillFiles();
+    expect(bundle.some((file) => file.relative === 'references/explore.md')).toBe(true);
+    vi.mocked(readSkillFiles).mockReturnValue(bundle.filter((file) => file.relative !== 'references/explore.md'));
+    expect((await init(dir, { yes: true, skills: ['.agents/skills'], mcp: [] })).exitCode).toBe(0);
+    expect(existsSync(path.join(dir, '.agents/skills/e2e/references/explore.md'))).toBe(false);
+    expect(read('.agents/skills/e2e/references/notes.md')).toBe('mine\n');
+    expect(output()).toContain(`Updated .agents/skills/e2e/ (${bundle.length - 1} files; removed references/explore.md)`);
+  });
+
   it('repairs a damaged copy without asking and leaves other locations alone', async () => {
     mkdirSync(path.join(dir, '.agents/skills/e2e/references'), { recursive: true });
     writeFileSync(path.join(dir, '.agents/skills/e2e/references/setup.md'), 'stale\n');
@@ -1633,6 +1721,60 @@ export default {
 `);
       expect((await init(dir, { yes: true, ci: 'github-actions' })).exitCode).toBe(0);
       expect(read('.github/workflows/e2e.yml')).not.toContain('Build the app');
+    });
+  });
+
+  describe('in a Vite app', () => {
+    /** Writes the package.json `create vite` writes for its React template, with `scripts` in place of its own. */
+    function viteApp(scripts: Record<string, string> = { dev: 'vite', build: 'tsc -b && vite build', preview: 'vite preview' }): void {
+      writeFileSync(path.join(dir, 'package.json'), JSON.stringify({
+        name: 'my-app',
+        private: true,
+        type: 'module',
+        scripts,
+        dependencies: { react: '^19.3.1', 'react-dom': '^19.3.1' },
+        devDependencies: { '@vitejs/plugin-react': '^6.1.2', vite: '^8.3.6' },
+      }, null, 2));
+    }
+
+    it('starts the Vite dev server on its port, and asks for no APP_URL', async () => {
+      viteApp();
+      expect((await init(dir, { yes: true })).exitCode).toBe(0);
+      expect(read('e2e.config.ts')).toContain(`  targets: [{
+    engine: web(),
+    app: {
+      url: 'http://localhost:5173',
+      // The runner starts the Vite dev server, or uses one you already started on that port.
+      command: { executable: 'npm', args: ['run', 'dev'], reuseExisting: true },
+    },
+  }],`);
+      expect(read('e2e.config.ts')).not.toContain('const ci');
+      expect(read('e2e.config.ts')).not.toContain('APP_URL');
+      expect(output()).toContain('Found Vite: the web target starts npm run dev on http://localhost:5173\n');
+      expect(output()).toContain('Next: npm install, then npm run test:e2e');
+      expect(output()).not.toContain('APP_URL=');
+    });
+
+    it('keeps the placeholder target and says why when the Vite config sets another port', async () => {
+      viteApp();
+      writeFileSync(path.join(dir, 'vite.config.ts'), 'export default { server: { port: 3000 } };\n');
+      expect((await init(dir, { yes: true })).exitCode).toBe(0);
+      expect(read('e2e.config.ts')).toContain("url: process.env.APP_URL ?? 'http://localhost:3000',");
+      expect(output()).toContain('Found Vite, but vite.config.ts sets a port other than 5173; set app.url and app.command in e2e.config.ts, see https://e2e.com/docs/reference/cli#vite-apps');
+    });
+
+    it('keeps the placeholder target when the dev script starts no Vite dev server', async () => {
+      viteApp({ dev: 'vite build --watch', build: 'vite build' });
+      expect((await init(dir, { yes: true })).exitCode).toBe(0);
+      expect(read('e2e.config.ts')).toContain("url: process.env.APP_URL ?? 'http://localhost:3000',");
+      expect(output()).toContain('Found Vite, but the dev script does not start the Vite dev server');
+    });
+
+    it('starts the dev server in CI too, with no build step and nothing missing', async () => {
+      viteApp();
+      expect((await init(dir, { yes: true, ci: 'github-actions' })).exitCode).toBe(0);
+      expect(read('.github/workflows/e2e.yml')).not.toContain('Build the app');
+      expect(output()).not.toContain('Nothing starts the app in CI');
     });
   });
 
