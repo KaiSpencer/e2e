@@ -230,14 +230,15 @@ project's package manager:
 
 - `app.url` is `http://localhost:<port>`, with the port from the `--port`
   flag of the `vite` command, else 5173. Vite reads no `PORT` variable.
-- `app.command` runs the `dev` script with `reuseExisting: true`, in CI too.
-  `vite preview` serves the production build on another port, so CI tests
-  the dev server.
+- `app.command` runs the `dev` script with `reuseExisting: true`, so a
+  local run reuses a dev server already on the port. CI ignores
+  `reuseExisting` and starts the script. `vite preview` serves the
+  production build on another port, so CI tests the dev server too.
 
-Without `--port`, a `server.port` in the Vite config wins over 5173. So
-`init` then reads the `vite.config.*` file at the project root. It accepts
-the file only when every `port` key in it, `preview` and `hmr` ones
-included, is 5173.
+Without `--port`, Vite uses the config's `server.port` over 5173, so
+`init` reads the `vite.config.*` file at the project root. When any `port`
+key in it, `preview` and `hmr` ones included, isn't 5173, `init` keeps the
+placeholder, as listed below.
 
 The target reads `APP_URL` as in any other project, and `init` says what to
 set, when:

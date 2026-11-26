@@ -123,6 +123,7 @@ describe('detectFramework on a Vite app', () => {
     ['cross-env NODE_ENV=development vite --port 4600', 4600],
     ['pnpm exec vite', 5173],
     ['concurrently -k "vite" "tsc -w"', 5173],
+    ['bash -c "vite --port 4300"', 4300],
     ['concurrently --kill-others "vite" "tsc -w"', 5173],
     ['concurrently -r "vite --port 4100" "tsc -w"', 4100],
     ['vite --mode "development" --port 4200', 4200],
@@ -134,6 +135,8 @@ describe('detectFramework on a Vite app', () => {
 
   it.each([
     ['tsc -b --watch', 'the dev script does not start the Vite dev server'],
+    // Only a launcher's quoted arguments are commands.
+    ['echo "vite"', 'the dev script does not start the Vite dev server'],
     ['vite build --watch', 'the dev script does not start the Vite dev server'],
     ['react-router dev', 'the dev script does not start the Vite dev server'],
     ['storybook dev -p 6006', 'the dev script does not start the Vite dev server'],
@@ -157,15 +160,15 @@ describe('detectFramework on a Vite app', () => {
   });
 
   it.each([
-    ['export default defineConfig({ plugins: [react()] });', 'vite'],
-    ['export default defineConfig({ server: { port: 5173, strictPort: true } });', 'vite'],
-    ['export default defineConfig({ server: { port: 4100 } });', 'vite --port 4100'],
-    // Based on examples/with-vite/vite.config.ts: a comment that says "port" is not a port.
-    ["export default defineConfig({\n  plugins: [react()],\n  // A fixed port, so e2e.config.ts knows where the app is.\n  server: { port: 5173, strictPort: true }, /* not the preview port */\n  base: 'http://cdn.example.com//assets',\n});", 'vite'],
+    ['export default defineConfig({ plugins: [react()] });', 'vite', 5173],
+    ['export default defineConfig({ server: { port: 5173, strictPort: true } });', 'vite', 5173],
+    ['export default defineConfig({ server: { port: 4100 } });', 'vite --port 4100', 4100],
     // `--port` wins over the config's port.
-    ['export default defineConfig({ server: { port: 3000 } });', 'vite --port 4100'],
-  ])('starts an app whose Vite config %j keeps the port of %j', (text, dev) => {
-    expect(vite({ dev }, (name) => (name === 'vite.config.mjs' ? text : undefined))).toMatchObject({ kind: 'app' });
+    ['export default defineConfig({ server: { port: 3000 } });', 'vite --port 4100', 4100],
+    // Based on examples/with-vite/vite.config.ts: a comment that says "port" is not a port.
+    ["export default defineConfig({\n  plugins: [react()],\n  // A fixed port, so e2e.config.ts knows where the app is.\n  server: { port: 5173, strictPort: true }, /* not the preview port */\n  base: 'http://cdn.example.com//assets',\n});", 'vite', 5173],
+  ])('starts an app whose Vite config %j keeps the port of %j on %d', (text, dev, port) => {
+    expect(vite({ dev }, (name) => (name === 'vite.config.mjs' ? text : undefined))).toMatchObject({ kind: 'app', url: `http://localhost:${port}` });
   });
 
   it.each([
@@ -216,8 +219,10 @@ describe('detectFramework on a Vite app', () => {
     expect(found).toMatchObject({ kind: 'unsupported', reason: `${source} serves the Vite dev server over HTTPS` });
   });
 
-  it('reads an https:// URL in a config as no HTTPS dev server', () => {
-    const config = "export default defineConfig({ base: 'https://cdn.example.com/' });";
+  it.each([
+    "export default defineConfig({ base: 'https://cdn.example.com/' });",
+    'export default defineConfig({ server: { https: false } });',
+  ])('reads %j as no HTTPS dev server', (config) => {
     expect(vite(VITE_SCRIPTS, (name) => (name === 'vite.config.ts' ? config : undefined))).toMatchObject({ kind: 'app' });
   });
 });

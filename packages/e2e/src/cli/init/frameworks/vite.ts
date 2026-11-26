@@ -23,8 +23,10 @@ const HTTPS_PLUGINS = ['@vitejs/plugin-basic-ssl', 'vite-plugin-mkcert'];
 const CONFIGS = ['vite.config.ts', 'vite.config.mts', 'vite.config.cts', 'vite.config.js', 'vite.config.mjs', 'vite.config.cjs'];
 /** Every `port` key in a config, as `port: 3000`, `port: env.PORT`, or the shorthand `{ port }`. */
 const CONFIG_PORT = /\bport\b(?:\s*:\s*([^,}\n]*))?/gu;
-/** An `https` key in a config, as `https: { ... }` or the shorthand `{ https }`, and not an `https://` URL. */
-const CONFIG_HTTPS = /\bhttps\s*(?::(?!\/\/)|[,}])/u;
+/** An `https` key in a config, as `https: { ... }` or the shorthand `{ https }`, and not `https: false` or an `https://` URL. */
+const CONFIG_HTTPS = /\bhttps\s*(?::(?!\/\/|\s*false\b)|[,}])/u;
+/** Launchers whose quoted arguments are commands: `concurrently "vite" "tsc -w"`, `sh -c "vite"`. */
+const RUNNERS = new Set(['concurrently', 'sh', 'bash']);
 
 export const vite: Framework = {
   /** A project with `vite` in `dependencies` or `devDependencies`. */
@@ -76,11 +78,10 @@ export const vite: Framework = {
 
 /**
  * A script's commands, each as its words from the binary on (see
- * `launched`). A script splits at `&&`, `||`, `;`, `&`, and `|`. Under a
- * launcher such as `concurrently`, a quoted argument is a command of its
- * own (`concurrently -k "vite" "json-server --port 3001"`); under `vite`,
- * it is one word, an option's value or the root (`vite --mode "dev"`,
- * `vite "web"`).
+ * `launched`). A script splits at `&&`, `||`, `;`, `&`, and `|`. Under one
+ * of `RUNNERS`, a quoted argument is a command of its own
+ * (`concurrently -k "vite" "json-server --port 3001"`); under any other
+ * command it is one word, as in `vite "web"` or `echo "vite"`.
  */
 function viteCommands(script: string): string[][] {
   const commands: string[][] = [];
@@ -89,8 +90,8 @@ function viteCommands(script: string): string[][] {
     for (const match of part.matchAll(/"([^"]*)"|'([^']*)'|(\S+)/gu)) {
       const quoted = match[1] ?? match[2];
       if (quoted === undefined) outer.push(match[3] ?? '');
-      else if (launched(outer)[0] === 'vite') outer.push(quoted);
-      else commands.push(launched(quoted.split(/\s+/u).filter((word) => word !== '')));
+      else if (RUNNERS.has(launched(outer)[0] ?? '')) commands.push(launched(quoted.split(/\s+/u).filter((word) => word !== '')));
+      else outer.push(quoted);
     }
     commands.push(launched(outer));
   }

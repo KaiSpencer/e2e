@@ -835,10 +835,14 @@ function servedBuild(manifest: FrameworkManifest, config: string): string | unde
   return scripts !== undefined && configRunsScript(config, scripts.start) ? scripts.build : undefined;
 }
 
-/** A file at the project root as text, or undefined when there is none. */
+/** A file at the project root as text, or undefined when there is none or it cannot be read, so detection never stops init. */
 function readProjectFile(cwd: string, name: string): string | undefined {
-  const file = path.join(cwd, name);
-  return existsSync(file) && statSync(file).isFile() ? readFileSync(file, 'utf8') : undefined;
+  try {
+    const file = path.join(cwd, name);
+    return statSync(file).isFile() ? readFileSync(file, 'utf8') : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Whether `manager` runs in the workspace root, which exists before init writes and where a Corepack shim picks the workspace's version. */
