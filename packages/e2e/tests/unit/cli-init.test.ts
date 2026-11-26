@@ -1755,19 +1755,19 @@ export default {
       expect(output()).not.toContain('APP_URL=');
     });
 
-    it('keeps the placeholder target and says why when the Vite config may set the port', async () => {
+    it('keeps the placeholder target and says why when the Vite config sets another port', async () => {
       viteApp();
       writeFileSync(path.join(dir, 'vite.config.ts'), 'export default { server: { port: 3000 } };\n');
       expect((await init(dir, { yes: true })).exitCode).toBe(0);
       expect(read('e2e.config.ts')).toContain("url: process.env.APP_URL ?? 'http://localhost:3000',");
-      expect(output()).toContain("Found Vite, but vite.config.ts may set the dev server's port; set app.url and app.command in e2e.config.ts, see https://e2e.com/docs/reference/cli#vite-apps");
+      expect(output()).toContain('Found Vite, but vite.config.ts sets a port other than 5173; set app.url and app.command in e2e.config.ts, see https://e2e.com/docs/reference/cli#vite-apps');
     });
 
     it('keeps the placeholder target when the dev script starts no Vite dev server', async () => {
       viteApp({ dev: 'vite build --watch', build: 'vite build' });
       expect((await init(dir, { yes: true })).exitCode).toBe(0);
       expect(read('e2e.config.ts')).toContain("url: process.env.APP_URL ?? 'http://localhost:3000',");
-      expect(output()).toContain('Found Vite, but the dev script does not start the vite dev server');
+      expect(output()).toContain('Found Vite, but the dev script does not start the Vite dev server');
     });
 
     it('starts the dev server in CI too, with no build step and nothing missing', async () => {

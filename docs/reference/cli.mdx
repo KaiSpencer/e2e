@@ -234,9 +234,10 @@ project's package manager:
   `vite preview` serves the production build on another port, so CI tests
   the dev server.
 
-Without `--port`, a `server.port` in the Vite config wins over 5173. `init`
-reads the `vite.config.*` file at the project root then, and accepts a
-`port` there only when it is 5173.
+Without `--port`, a `server.port` in the Vite config wins over 5173. So
+`init` then reads the `vite.config.*` file at the project root. It accepts
+the file only when every `port` key in it, `preview` and `hmr` ones
+included, is 5173.
 
 The target reads `APP_URL` as in any other project, and `init` says what to
 set, when:
@@ -250,6 +251,9 @@ set, when:
   read.
 - The `vite` command has no `--port`, and the root `vite.config.*` sets
   another `port`.
+- The dev server serves HTTPS: `@vitejs/plugin-basic-ssl` or
+  `vite-plugin-mkcert` is a dependency, or the root `vite.config.*` has an
+  `https` key.
 - The project has a backend that Vite only serves assets for:
   `laravel-vite-plugin`, `vite-plugin-symfony`, `vite-plugin-ruby`, or
   `vite-plugin-rails` as a dependency, or `artisan` or `manage.py` at the
