@@ -6,6 +6,7 @@
  */
 
 import { nextjs } from './frameworks/nextjs.ts';
+import { vite } from './frameworks/vite.ts';
 
 /** The parts of package.json a framework reads. */
 export interface FrameworkManifest {
@@ -66,8 +67,11 @@ export interface Framework {
   productionScripts?(manifest: FrameworkManifest): ProductionScripts | undefined;
 }
 
-/** The frameworks init tries, in order. A framework built on another one goes before it. */
-const FRAMEWORKS: readonly Framework[] = [nextjs];
+/**
+ * The frameworks init tries, in order. A framework built on another one goes
+ * before it: Next.js before Vite, since a Next.js app can list `vite` too.
+ */
+const FRAMEWORKS: readonly Framework[] = [nextjs, vite];
 
 /** The first framework that claims the project, which answers every question about it. */
 function owner(manifest: FrameworkManifest): Framework | undefined {

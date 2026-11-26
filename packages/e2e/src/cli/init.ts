@@ -417,7 +417,7 @@ export async function init(root: string, options: InitOptions = {}): Promise<Ini
     return done('invalid-project', 2);
   }
 
-  // A new config's web target starts an app init recognizes, such as Next.js, with the project's own scripts.
+  // A new config's web target starts an app init recognizes, such as Next.js or Vite, with the project's own scripts.
   const framework = existingConfig === undefined && engines.includes('web')
     ? detectFramework({ manifest: pkg.manifest, readFile: (name) => readProjectFile(cwd, name) })
     : undefined;
